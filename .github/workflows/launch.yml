@@ -25,7 +25,7 @@ jobs:
           echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
-      - name: Try Launch Instance (retry every 5 seconds)
+      - name: Try Launch Instance (retry every 90 seconds)
         run: |
           attempt=1
           while true; do
@@ -48,8 +48,8 @@ jobs:
               echo "$result"
               exit 0
             else
-              echo "  No capacity, retrying in 5s..."
+              echo "  No capacity, retrying in 90s..."
               attempt=$((attempt + 1))
-              sleep 5
+              sleep 90
             fi
           done
