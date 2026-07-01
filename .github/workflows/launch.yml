@@ -61,4 +61,4 @@ jobs:
         run: |
           curl -s -d "Instance launched in Mumbai! Check the console and resize it before capacity moves on." \
             -H "Title: OCI Launch Success" -H "Priority: urgent" -H "Tags: tada" \
-            https://ntfy.sh/CHANGE-ME-TO-YOUR-OWN-TOPIC
+            https://ntfy.sh/altaf-oci-mumbai-333
