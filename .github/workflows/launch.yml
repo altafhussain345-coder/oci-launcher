@@ -12,7 +12,7 @@ concurrency:
 jobs:
   launch:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 360
     steps:
       - name: Install OCI CLI
         run: pip install oci-cli
@@ -29,32 +29,36 @@ jobs:
           echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
-      - name: Try Launch Instance (single attempt)
+      - name: Retry every 90 seconds until timeout
         id: launch
         run: |
-          echo "Attempt at $(date '+%H:%M:%S')"
+          success=false
+          while true; do
+            echo "Attempt at $(date '+%H:%M:%S')"
 
-          result=$(oci compute instance launch \
-            --availability-domain "ujzC:AP-MUMBAI-1-AD-1" \
-            --compartment-id "${{ secrets.OCI_CLI_TENANCY }}" \
-            --shape "VM.Standard.A1.Flex" \
-            --shape-config '{"ocpus": 1, "memoryInGBs": 6}' \
-            --image-id "ocid1.image.oc1.ap-mumbai-1.aaaaaaaa2op2x2s5rnduo5osx6zojr526qxtrvhddkdhks5nllbwjzcylwya" \
-            --subnet-id "ocid1.subnet.oc1.ap-mumbai-1.aaaaaaaa2ajhh2aoxual7q3udqmxe54izgsr4fwp3lsxdazf4icb3p44abdq" \
-            --assign-public-ip true \
-            --display-name "free-arm-instance" \
-            --metadata "{\"ssh_authorized_keys\": \"${{ secrets.OCI_SSH_PUBLIC_KEY }}\"}" \
-            2>&1 || true)
+            result=$(oci compute instance launch \
+              --availability-domain "ujzC:AP-MUMBAI-1-AD-1" \
+              --compartment-id "${{ secrets.OCI_CLI_TENANCY }}" \
+              --shape "VM.Standard.A1.Flex" \
+              --shape-config '{"ocpus": 1, "memoryInGBs": 6}' \
+              --image-id "ocid1.image.oc1.ap-mumbai-1.aaaaaaaa2op2x2s5rnduo5osx6zojr526qxtrvhddkdhks5nllbwjzcylwya" \
+              --subnet-id "ocid1.subnet.oc1.ap-mumbai-1.aaaaaaaa2ajhh2aoxual7q3udqmxe54izgsr4fwp3lsxdazf4icb3p44abdq" \
+              --assign-public-ip true \
+              --display-name "free-arm-instance" \
+              --metadata "{\"ssh_authorized_keys\": \"${{ secrets.OCI_SSH_PUBLIC_KEY }}\"}" \
+              2>&1 || true)
 
-          echo "$result"
-
-          if echo "$result" | grep -q "lifecycle-state"; then
-            echo "SUCCESS! Instance Created!"
-            echo "success=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No capacity this run -- the next scheduled run in ~5 min will retry."
-            echo "success=false" >> "$GITHUB_OUTPUT"
-          fi
+            if echo "$result" | grep -q "lifecycle-state"; then
+              echo "SUCCESS! Instance Created!"
+              echo "$result"
+              success=true
+              break
+            else
+              echo "  No capacity, retrying in 90s..."
+              sleep 90
+            fi
+          done
+          echo "success=$success" >> "$GITHUB_OUTPUT"
 
       - name: Notify on success
         if: steps.launch.outputs.success == 'true'
