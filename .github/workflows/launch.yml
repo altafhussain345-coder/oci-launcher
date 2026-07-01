@@ -5,10 +5,14 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+concurrency:
+  group: oci-launch
+  cancel-in-progress: false
+
 jobs:
   launch:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 10
     steps:
       - name: Install OCI CLI
         run: pip install oci-cli
@@ -25,31 +29,36 @@ jobs:
           echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
 
-      - name: Try Launch Instance (retry every 90 seconds)
+      - name: Try Launch Instance (single attempt)
+        id: launch
         run: |
-          attempt=1
-          while true; do
-            echo "Attempt #$attempt - $(date '+%H:%M:%S')"
-            
-            result=$(oci compute instance launch \
-              --availability-domain "ujzC:AP-MUMBAI-1-AD-1" \
-              --compartment-id "${{ secrets.OCI_CLI_TENANCY }}" \
-              --shape "VM.Standard.A1.Flex" \
-              --shape-config '{"ocpus": 1, "memoryInGBs": 6}' \
-              --image-id "ocid1.image.oc1.ap-mumbai-1.aaaaaaaa2op2x2s5rnduo5osx6zojr526qxtrvhddkdhks5nllbwjzcylwya" \
-              --subnet-id "ocid1.subnet.oc1.ap-mumbai-1.aaaaaaaa2ajhh2aoxual7q3udqmxe54izgsr4fwp3lsxdazf4icb3p44abdq" \
-              --assign-public-ip true \
-              --display-name "free-arm-instance" \
-              --metadata "{\"ssh_authorized_keys\": \"${{ secrets.OCI_SSH_PUBLIC_KEY }}\"}" \
-              2>&1 || true)
+          echo "Attempt at $(date '+%H:%M:%S')"
 
-            if echo "$result" | grep -q "lifecycle-state"; then
-              echo "SUCCESS! Instance Created!"
-              echo "$result"
-              exit 0
-            else
-              echo "  No capacity, retrying in 90s..."
-              attempt=$((attempt + 1))
-              sleep 90
-            fi
-          done
+          result=$(oci compute instance launch \
+            --availability-domain "ujzC:AP-MUMBAI-1-AD-1" \
+            --compartment-id "${{ secrets.OCI_CLI_TENANCY }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config '{"ocpus": 1, "memoryInGBs": 6}' \
+            --image-id "ocid1.image.oc1.ap-mumbai-1.aaaaaaaa2op2x2s5rnduo5osx6zojr526qxtrvhddkdhks5nllbwjzcylwya" \
+            --subnet-id "ocid1.subnet.oc1.ap-mumbai-1.aaaaaaaa2ajhh2aoxual7q3udqmxe54izgsr4fwp3lsxdazf4icb3p44abdq" \
+            --assign-public-ip true \
+            --display-name "free-arm-instance" \
+            --metadata "{\"ssh_authorized_keys\": \"${{ secrets.OCI_SSH_PUBLIC_KEY }}\"}" \
+            2>&1 || true)
+
+          echo "$result"
+
+          if echo "$result" | grep -q "lifecycle-state"; then
+            echo "SUCCESS! Instance Created!"
+            echo "success=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No capacity this run -- the next scheduled run in ~5 min will retry."
+            echo "success=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify on success
+        if: steps.launch.outputs.success == 'true'
+        run: |
+          curl -s -d "Instance launched in Mumbai! Check the console and resize it before capacity moves on." \
+            -H "Title: OCI Launch Success" -H "Priority: urgent" -H "Tags: tada" \
+            https://ntfy.sh/CHANGE-ME-TO-YOUR-OWN-TOPIC
